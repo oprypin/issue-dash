@@ -52,7 +52,7 @@ class IssueDash
       redirect_uri += "?" + HTTP::Params.encode({destination: destination})
     end
     "https://github.com/login/oauth/authorize?" + HTTP::Params.encode({
-      client_id: GITHUB_CLIENT_ID, scope: "", redirect_uri: abs_url(redirect_uri),
+      client_id: GITHUB_CLIENT_ID, scope: "read:org", redirect_uri: abs_url(redirect_uri),
     })
   end
 
