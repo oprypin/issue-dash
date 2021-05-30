@@ -1,0 +1,34 @@
+version: 2.0
+shards:
+  bindata:
+    git: https://github.com/spider-gazelle/bindata.git
+    version: 1.9.0
+
+  db:
+    git: https://github.com/crystal-lang/crystal-db.git
+    version: 0.10.1
+
+  future:
+    git: https://github.com/crystal-community/future.cr.git
+    version: 1.0.0
+
+  halite:
+    git: https://github.com/icyleaf/halite.git
+    version: 0.12.0
+
+  jwt:
+    git: https://github.com/crystal-community/jwt.git
+    version: 1.5.1
+
+  openssl_ext:
+    git: https://github.com/spider-gazelle/openssl_ext.git
+    version: 2.1.4
+
+  retour:
+    git: https://github.com/oprypin/retour.git
+    version: 0.1.0+git.commit.0e408cb9739bda53913f54139666d90353b87ca2
+
+  sqlite3:
+    git: https://github.com/crystal-lang/crystal-sqlite3.git
+    version: 0.18.0
+

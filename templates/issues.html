@@ -1,0 +1,32 @@
+<title>Issue dashboard | <%= HTML.escape(repo) %> | <%= kind %></title>
+<% {false, true}.each do |dismissed| %>
+  <ul class="issue-list">
+    <% issues.each do |iss| %>
+      <% if iss[:is_dismissed] == dismissed %>
+        <li>
+          <input type="checkbox" autocomplete="off"<% if dismissed %> checked="checked"<% end %> data-repo="<%= HTML.escape(repo) %>" data-id="<%= iss[:id] %>">
+          <a href="<%= HTML.escape(iss[:url]) %>"><%= HTML.escape(iss[:title]) %></a>
+          <div class="sub">by <%= HTML.escape(iss[:author]) %> &bull; updated <%= HTML.escape(iss[:updated_at].to_s) %></div>
+        </li>
+      <% end %>
+    <% end %>
+  </ul>
+  <hr>
+<% end %>
+<script>
+  document.querySelectorAll(".issue-list input[type=checkbox]").forEach(function(checkbox) {
+    checkbox.addEventListener("change", function() {
+      var check = this;
+      check.disabled = true;
+      var req = new XMLHttpRequest();
+      req.open("GET", "/update_issue?repo=" + encodeURIComponent(check.getAttribute("data-repo")) + "&id=" + check.getAttribute("data-id") + "&dismiss=" + (check.checked | 0));
+      req.onloadend = function() {
+        if (this.status !== 200) {
+          check.checked = !check.checked;
+        }
+        check.disabled = false;
+      };
+      req.send();
+    });
+  });
+</script>

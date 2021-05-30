@@ -1,0 +1,23 @@
+name: issue-dash
+version: 0.1.0
+
+authors:
+  - Oleh Prypin <oleh@pryp.in>
+
+targets:
+  server:
+    main: src/issue_dash.cr
+
+dependencies:
+  retour:
+    github: oprypin/retour
+  jwt:
+    github: crystal-community/jwt
+  halite:
+    github: icyleaf/halite
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
+  future:
+    github: crystal-community/future.cr
+
+license: AGPL-3.0

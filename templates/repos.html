@@ -1,0 +1,11 @@
+<title>Issue dashboard</title>
+<ul>
+  <% repos.each_value do |repo| %>
+    <li>
+      <%= HTML.escape(repo) %><br>
+      <% {"issues", "pulls"}.each do |kind| %>
+        <a href="<%= HTML.escape(IssueDash.gen_issue_list(repo: Retour.path(repo), kind: kind)) %>"><%= kind %></a>
+      <% end %>
+    </li>
+  <% end %>
+</ul>

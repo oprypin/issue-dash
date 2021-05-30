@@ -1,0 +1,17 @@
+*
+!.gitignore
+!Makefile
+!*.md
+!/shard.yml
+!/shard.lock
+!/src/
+!/src/*.cr
+!/spec/
+!/spec/*.cr
+!/templates/
+!/templates/*.html
+!/assets/
+!/assets/*
+!/.github/
+!/.github/workflows
+!/.github/workflows/*.yml
