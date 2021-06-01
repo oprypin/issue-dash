@@ -4,8 +4,8 @@
     <% issues.each do |iss| %>
       <% if iss[:is_dismissed] == dismissed %>
         <li>
-          <input type="checkbox" autocomplete="off"<% if dismissed %> checked="checked"<% end %> data-repo="<%= HTML.escape(repo) %>" data-id="<%= iss[:id] %>">
-          <a href="<%= HTML.escape(iss[:url]) %>"><%= HTML.escape(iss[:title]) %></a>
+          <input type="checkbox" autocomplete="off"<% if dismissed %> checked="checked"<% end %> data-repo="<%= HTML.escape(repo) %>" data-number="<%= iss[:number] %>">
+          <a href="https://github.com/<%= HTML.escape(repo) %>/<%= kind %>/<%= iss[:number] %>"><%= HTML.escape(iss[:title]) %></a>
           <div class="sub">by <%= HTML.escape(iss[:author]) %> &bull; updated <%= HTML.escape(iss[:updated_at].to_s) %></div>
         </li>
       <% end %>
@@ -19,7 +19,7 @@
       var check = this;
       check.disabled = true;
       var req = new XMLHttpRequest();
-      req.open("GET", "/update_issue?repo=" + encodeURIComponent(check.getAttribute("data-repo")) + "&id=" + check.getAttribute("data-id") + "&dismiss=" + (check.checked | 0));
+      req.open("GET", "/update_issue?repo=" + encodeURIComponent(check.getAttribute("data-repo")) + "&number=" + check.getAttribute("data-number") + "&dismiss=" + (check.checked | 0));
       req.onloadend = function() {
         if (this.status !== 200) {
           check.checked = !check.checked;

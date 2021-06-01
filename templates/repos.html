@@ -3,9 +3,8 @@
   <% repos.each_value do |repo| %>
     <li>
       <%= HTML.escape(repo) %><br>
-      <% {"issues", "pulls"}.each do |kind| %>
-        <a href="<%= HTML.escape(IssueDash.gen_issue_list(repo: Retour.path(repo), kind: kind)) %>"><%= kind %></a>
-      <% end %>
+      <a href="<%= HTML.escape(IssueDash.gen_issues_list(repo: Retour.path(repo))) %>">issues</a>
+      <a href="<%= HTML.escape(IssueDash.gen_pulls_list(repo: Retour.path(repo))) %>">pulls</a>
     </li>
   <% end %>
 </ul>

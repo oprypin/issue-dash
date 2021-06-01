@@ -14,24 +14,40 @@ GitHub = Halite::Client.new do
   logging(skip_request_body: true, skip_response_body: true)
 end
 
-private macro get_json_list(url, key = nil, params = Hash(String, String).new, max_items = 10000, **kwargs)
-  %url : String? = {{url}}
-  %max_items : Int32 = {{max_items}}
-  %params = {{params}}
-  %params["per_page"] = %max_items.to_s
-  %n = 0
-  while %url
-    %resp = GitHub.get(%url, params: %params, {{**kwargs}})
-    %resp.raise_for_status
-    %result = JSON.parse(%resp.body)
-    %url = %resp.links.try(&.["next"]?).try(&.target)
-    %params = {"per_page" => %max_items.to_s}
-    %result {% if key %}[{{key}}]{% end %}.as_a.each do |x|
-      yield x
-      %n += 1
-      break if %n >= %max_items
+class GraphQLError < Exception
+  getter errors : Array(JSON::Any)
+
+  def initialize(@errors : Array(JSON::Any))
+    super(@errors.to_s)
+  end
+end
+
+def paginated_graphql(query : String, key : Tuple, vars : Hash? = nil, **kwargs) : Iterator(JSON::Any)
+  my_vars = {} of String => String
+  if vars
+    my_vars = vars.merge(my_vars)
+  end
+  json = {"query" => query, "variables" => my_vars}
+
+  iter = Iterator.of(Iterator.stop)
+  has_next_page = true
+  Iterator.of do
+    item = iter.next
+    if item.is_a?(Iterator::Stop) && has_next_page
+      resp = GitHub.post("graphql", **kwargs, json: json)
+      resp.raise_for_status
+      result = JSON.parse(resp.body)
+      if (errors = result["errors"]?)
+        raise GraphQLError.new(errors.as_a)
+      end
+      data = result["data"].dig(*key)
+      if (has_next_page = data["pageInfo"]["hasNextPage"].as_bool)
+        my_vars["cursor"] = data["pageInfo"]["endCursor"].as_s
+      end
+      iter = data["nodes"].as_a.each
+      item = iter.next
     end
-    break if %n >= %max_items
+    item
   end
 end
 
@@ -42,14 +58,52 @@ def get_user(token : Token) : JSON::Any
   JSON.parse(resp.body)
 end
 
-def get_repositories(token : Token, & : JSON::Any ->)
-  # https://docs.github.com/en/rest/reference/repos#list-repositories-for-the-authenticated-user
-  get_json_list("user/repos", headers: {Authorization: token})
+def get_repositories_for_user(token : Token) : Iterator(JSON::Any)
+  paginated_graphql(%(
+    query ($cursor: String) {
+      viewer {
+        repositories(privacy: PUBLIC,
+                     first: 100,
+                     affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR],
+                     ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR],
+                     after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            nameWithOwner
+          }
+        }
+      }
+    }
+  ), {"viewer", "repositories"},
+    headers: {Authorization: token})
 end
 
-def get_issues(repo : String, *, since : String?, state : String = "all", token : Token, & : JSON::Any ->)
-  # https://docs.github.com/en/rest/reference/repos#list-repositories-for-the-authenticated-user
-  params = {"state" => state, "sort" => "updated", "direction" => "asc"}
-  params["since"] = since if since
-  get_json_list("repos/#{repo}/issues", headers: {Authorization: token}, params: params)
-end
+{% for kind in ["issues", "pulls"] %}
+  {% api_kind = {"issues" => "issues", "pulls" => "pullRequests"}[kind] %}
+
+  def get_{{kind.id}}(repo : String, *, open_only : Bool = false, token : Token) : Iterator(JSON::Any)
+    repo_owner, repo_name = repo.split("/", 2)
+    paginated_graphql(%(
+      query ($repo_owner: String!, $repo_name: String!, $cursor: String) {
+        repository(owner: $repo_owner, name: $repo_name) {
+          {{api_kind.id}}(first: 100,
+                      #{open_only ? "states: [OPEN]," : ""}
+                      orderBy: {field: UPDATED_AT, direction: DESC},
+                      after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              number
+              url
+              title
+              author { login }
+              state
+              updatedAt
+            }
+          }
+        }
+      }
+    ), {"repository", {{api_kind}}},
+      {"repo_owner" => repo_owner, "repo_name" => repo_name},
+      headers: {Authorization: token})
+  end
+{% end %}

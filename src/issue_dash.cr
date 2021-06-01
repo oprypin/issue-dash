@@ -29,20 +29,19 @@ class IssueDash
   def initialize(@db : DB::Database = DB.open("sqlite3:#{DATABASE_FILE}"))
     db.exec(%(
       CREATE TABLE IF NOT EXISTS issues (
-        id INTEGER NOT NULL UNIQUE GENERATED ALWAYS AS (json_extract(json, '$.id')),
-        json TEXT NOT NULL,
-        updated_at TEXT NOT NULL GENERATED ALWAYS AS (json_extract(json, '$.updated_at')),
+        repo TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        is_pull BOOLEAN NOT NULL,
+        is_open BOOLEAN NOT NULL,
+        updated_at TEXT NOT NULL,
         dismissed_at TEXT,
-        repo TEXT NOT NULL GENERATED ALWAYS AS (substr(json_extract(json, '$.repository_url'), 30)),
-        url TEXT NOT NULL GENERATED ALWAYS AS (json_extract(json, '$.html_url')),
-        title TEXT NOT NULL GENERATED ALWAYS AS (json_extract(json, '$.title')),
-        author TEXT GENERATED ALWAYS AS (json_extract(json, '$.user.login')),
-        is_open BOOLEAN NOT NULL GENERATED ALWAYS AS (json_extract(json, '$.state') = 'open'),
-        is_pull BOOLEAN NOT NULL GENERATED ALWAYS AS (json_extract(json, '$.pull_request') IS NOT NULL)
+        UNIQUE(repo, number)
       )
     ))
     db.exec(%(
-      CREATE INDEX IF NOT EXISTS index1 ON issues (repo, updated_at, is_pull, is_open)
+      CREATE INDEX IF NOT EXISTS index1 ON issues (is_pull, repo, updated_at, is_open)
     ))
   end
 
@@ -52,7 +51,7 @@ class IssueDash
       redirect_uri += "?" + HTTP::Params.encode({destination: destination})
     end
     "https://github.com/login/oauth/authorize?" + HTTP::Params.encode({
-      client_id: GITHUB_CLIENT_ID, scope: "read:org", redirect_uri: abs_url(redirect_uri),
+      client_id: GITHUB_CLIENT_ID, scope: "", redirect_uri: abs_url(redirect_uri),
     })
   end
 
@@ -113,12 +112,10 @@ class IssueDash
     end
 
     repos = future do
-      pairs = [] of {String, String}
-      get_repositories(token) do |repo|
-        repo = repo["full_name"].as_s
-        pairs << {repo.downcase, repo}
-      end
-      pairs.sort!.to_h
+      get_repositories_for_user(token).map do |repo|
+        repo = repo["nameWithOwner"].as_s
+        {repo.downcase, repo}
+      end.to_a.sort!.to_h
     end
 
     username = get_user(token)["login"].as_s
@@ -138,35 +135,43 @@ class IssueDash
     ECR.embed("#{__DIR__}/../templates/repos.html", ctx.response)
   end
 
-  @[Retour::Get("/{repo:[^/]+/[^/]+}/{kind:issues|pulls}")]
-  def issue_list(ctx, repo : String, kind : String)
+  {% for kind in ["issues", "pulls"] %}
+  {% is_pull = kind == "pulls".id %}
+
+  @[Retour::Get("/{repo:[^/]+/[^/]+}/{{kind.id}}")]
+  def {{kind.id}}_list(ctx, repo : String)
+    kind = {{kind}}
     login = check_auth!(ctx)
     repo = check_repo!(repo, kind, login)
 
     latest = nil
     @db.query(%(
-      SELECT updated_at FROM issues WHERE repo = ? ORDER BY updated_at DESC LIMIT 1
-    ), repo) do |rs|
+      SELECT updated_at FROM issues WHERE repo = ? AND is_pull = ? ORDER BY updated_at DESC LIMIT 1
+    ), repo, {{is_pull}}) do |rs|
       rs.each do
         latest = rs.read(String)
       end
     end
 
-    get_issues(repo, state: (latest ? "all" : "open"), since: latest, token: login.token) do |iss|
+    get_{{kind.id}}(repo, open_only: latest.nil?, token: login.token).each do |iss|
+      if latest && iss["updatedAt"].as_s < latest
+        break
+      end
       @db.exec(%(
-        INSERT INTO issues (json) VALUES(?) ON CONFLICT DO UPDATE SET json = excluded.json
-      ), iss.to_json)
+        INSERT INTO issues (repo, number, title, author, is_pull, is_open, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO UPDATE SET title = excluded.title, is_open = excluded.is_open, updated_at = excluded.updated_at
+      ), repo, iss["number"].as_i, iss["title"].as_s, iss["author"]["login"].as_s, {{is_pull}}, iss["state"].as_s == "OPEN", iss["updatedAt"].as_s)
     end
 
-    issues = [] of {id: Int64, url: String, title: String, author: String, updated_at: Time, is_dismissed: Bool}
+    issues = [] of {number: Int64, title: String, author: String, updated_at: Time, is_dismissed: Bool}
     @db.query(%(
-      SELECT id, url, title, author, updated_at, (coalesce(dismissed_at, '') >= updated_at) AS is_dismissed FROM issues
+      SELECT number, title, author, updated_at, (coalesce(dismissed_at, '') >= updated_at) AS is_dismissed FROM issues
       WHERE repo = ? AND is_pull = ? AND is_open = 1
       ORDER BY updated_at DESC
-    ), repo, kind == "pulls") do |rs|
+    ), repo, {{is_pull}}) do |rs|
       rs.each do
         issues << {
-          id: rs.read(Int64), url: rs.read(String), title: rs.read(String), author: rs.read(String),
+          number: rs.read(Int64), title: rs.read(String), author: rs.read(String),
           updated_at: Time.parse_rfc3339(rs.read(String)), is_dismissed: rs.read(Bool),
         }
       end
@@ -175,19 +180,20 @@ class IssueDash
     ECR.embed("#{__DIR__}/../templates/head.html", ctx.response)
     ECR.embed("#{__DIR__}/../templates/issues.html", ctx.response)
   end
+  {% end %}
 
   @[Retour::Get("/update_issue")]
   def update_issue(ctx)
     repo = ctx.request.query_params["repo"] rescue raise HTTPException.new(:BadRequest)
-    id = ctx.request.query_params["id"].to_i64 rescue raise HTTPException.new(:BadRequest)
+    number = ctx.request.query_params["number"].to_i64 rescue raise HTTPException.new(:BadRequest)
     dismiss = ctx.request.query_params["dismiss"].to_i rescue raise HTTPException.new(:BadRequest)
 
     login = check_auth?(ctx) || raise HTTPException.new(:Unauthorized)
     repo = check_repo?(repo, login) || raise HTTPException.new(:Unauthorized)
 
     @db.exec(%(
-      UPDATE issues SET dismissed_at = #{dismiss > 0 ? "updated_at" : "NULL"} WHERE id = ? AND repo = ?
-    ), id, repo)
+      UPDATE issues SET dismissed_at = #{dismiss > 0 ? "updated_at" : "NULL"} WHERE repo = ? AND number = ?
+    ), repo, number)
   end
 
   {% for name, path in {style: "assets/style.css"} %}
