@@ -32,10 +32,12 @@ class IssueDash
         repo TEXT NOT NULL,
         number INTEGER NOT NULL,
         title TEXT NOT NULL,
-        author TEXT NOT NULL,
+        author TEXT,
+        reviewers_html TEXT,
+        labels_html TEXT,
         is_pull BOOLEAN NOT NULL,
         is_open BOOLEAN NOT NULL,
-        updated_at TEXT NOT NULL,
+        updated_at TEXT,
         dismissed_at TEXT,
         UNIQUE(repo, number)
       )
@@ -149,7 +151,7 @@ class IssueDash
       SELECT updated_at FROM issues WHERE repo = ? AND is_pull = ? ORDER BY updated_at DESC LIMIT 1
     ), repo, {{is_pull}}) do |rs|
       rs.each do
-        latest = rs.read(String)
+        latest = rs.read(String?)
       end
     end
 
@@ -157,21 +159,46 @@ class IssueDash
       if latest && iss["updatedAt"].as_s < latest
         break
       end
+      number = iss["number"].as_i
+      title = iss["title"].as_s
+      author = iss.dig?("author", "login").try &.as_s
+      updated_at = iss["updatedAt"].as_s
+      is_open = iss["state"].as_s == "OPEN"
+
+      if (reviews = iss["reviews"]?)
+        reviewers = {} of String => Nil
+        reviews["nodes"].as_a.each do |review|
+          if (reviewer = review.dig?("author", "login").try &.as_s)
+            if review["state"].as_s == "APPROVED" && review["authorCanPushToRepository"].as_bool
+              reviewers[reviewer] = nil
+            else
+              reviewers.delete(reviewer)
+            end
+          end
+        end
+        reviewers_html = reviewers.keys.map { |r| %(<span class="reviewer">#{r}</span>) }.join(", ")
+      end
+
+      labels_html = iss["labels"]["nodes"].as_a.map do |label|
+        %(<span class="label" style="background-color: ##{HTML.escape(label["color"].as_s)}">#{HTML.escape(label["name"].as_s)}</span>)
+      end.join(" ")
+
       @db.exec(%(
-        INSERT INTO issues (repo, number, title, author, is_pull, is_open, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT DO UPDATE SET title = excluded.title, is_open = excluded.is_open, updated_at = excluded.updated_at
-      ), repo, iss["number"].as_i, iss["title"].as_s, iss["author"]["login"].as_s, {{is_pull}}, iss["state"].as_s == "OPEN", iss["updatedAt"].as_s)
+        INSERT INTO issues (repo, number, title, author, reviewers_html, labels_html, is_pull, is_open, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO UPDATE SET title = excluded.title, reviewers_html = excluded.reviewers_html, labels_html = excluded.labels_html, is_open = excluded.is_open, updated_at = excluded.updated_at
+      ), repo, number, title, author, reviewers_html, labels_html, {{is_pull}}, is_open, updated_at)
     end
 
-    issues = [] of {number: Int64, title: String, author: String, updated_at: Time, is_dismissed: Bool}
+    issues = [] of {number: Int64, title: String, author: String?, reviewers_html: String?, labels_html: String, updated_at: Time, is_dismissed: Bool}
     @db.query(%(
-      SELECT number, title, author, updated_at, (coalesce(dismissed_at, '') >= updated_at) AS is_dismissed FROM issues
+      SELECT number, title, author, reviewers_html, labels_html, updated_at, (coalesce(dismissed_at, '') >= updated_at) AS is_dismissed FROM issues
       WHERE repo = ? AND is_pull = ? AND is_open = 1
       ORDER BY updated_at DESC
     ), repo, {{is_pull}}) do |rs|
       rs.each do
         issues << {
-          number: rs.read(Int64), title: rs.read(String), author: rs.read(String),
+          number: rs.read(Int64), title: rs.read(String), author: rs.read(String?),
+          reviewers_html: rs.read(String?), labels_html: rs.read(String),
           updated_at: Time.parse_rfc3339(rs.read(String)), is_dismissed: rs.read(Bool),
         }
       end

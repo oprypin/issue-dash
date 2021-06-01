@@ -5,8 +5,9 @@
       <% if iss[:is_dismissed] == dismissed %>
         <li>
           <input type="checkbox" autocomplete="off"<% if dismissed %> checked="checked"<% end %> data-repo="<%= HTML.escape(repo) %>" data-number="<%= iss[:number] %>">
-          <a href="https://github.com/<%= HTML.escape(repo) %>/<%= kind %>/<%= iss[:number] %>"><%= HTML.escape(iss[:title]) %></a>
-          <div class="sub">by <%= HTML.escape(iss[:author]) %> &bull; updated <%= HTML.escape(iss[:updated_at].to_s) %></div>
+          <a href="https://github.com/<%= HTML.escape(repo) %>/<%= kind.rstrip('s') %>/<%= iss[:number] %>"><%= HTML.escape(iss[:title]) %></a>
+          <div class="sub"><span>by <%= HTML.escape(iss[:author] || "ghost") %></span> <span>updated <%= HTML.escape(iss[:updated_at].to_s) %></span></div>
+          <div class="sub"><% if iss[:reviewers_html].presence %><span><%= iss[:reviewers_html] %></span><% end %> <% if iss[:labels_html].presence %><span><%= iss[:labels_html] %></span><% end %></div>
         </li>
       <% end %>
     <% end %>

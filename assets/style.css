@@ -21,9 +21,21 @@ body {
     margin: 0 .2em .25em -1.6em;
     vertical-align: middle;
 }
-.issue-list input:checked~* {
+.issue-list input:checked ~ * {
     opacity: 0.5;
 }
 .sub {
     opacity: 0.9;
+}
+.sub>span + span::before {
+    content: " • "
+}
+
+.reviewer {
+    color: #070;
+}
+.label {
+    display: inline-block;
+    padding: 0 1px;
+    border-radius: 4px;
 }

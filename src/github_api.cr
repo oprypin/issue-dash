@@ -98,6 +98,23 @@ end
               author { login }
               state
               updatedAt
+              labels(last: 100) {
+                nodes {
+                  name
+                  color
+                }
+              }
+              {% if kind == "pulls" %}
+              reviews(last: 100, states: [APPROVED, CHANGES_REQUESTED, DISMISSED]) {
+                nodes {
+                  author {
+                    login
+                  }
+                  state
+                  authorCanPushToRepository
+                }
+              }
+              {% end %}
             }
           }
         }
