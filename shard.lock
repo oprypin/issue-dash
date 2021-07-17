@@ -22,7 +22,7 @@ shards:
 
   openssl_ext:
     git: https://github.com/spider-gazelle/openssl_ext.git
-    version: 2.1.4
+    version: 2.1.5
 
   retour:
     git: https://github.com/oprypin/retour.git
